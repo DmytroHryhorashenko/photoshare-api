@@ -1,7 +1,7 @@
 """Direct API handler tests to exercise route logic and improve coverage."""
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException, UploadFile

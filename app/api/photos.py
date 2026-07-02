@@ -67,7 +67,18 @@ def build_photo_detail_response(photo: Photo) -> PhotoDetailResponse:
     )
 
 
-@router.post("", response_model=PhotoResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=PhotoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a photo",
+    description="Upload an image file with optional description and up to 5 tags.",
+    responses={
+        201: {"description": "Photo uploaded"},
+        400: {"description": "Invalid file type or too many tags"},
+        500: {"description": "Cloudinary or database failure"},
+    },
+)
 async def upload_user_photo(
     file: UploadFile = File(...),
     description: str | None = Form(default=None),
@@ -118,7 +129,13 @@ async def upload_user_photo(
         ) from exc
 
 
-@router.get("/{photo_id}", response_model=PhotoDetailResponse)
+@router.get(
+    "/{photo_id}",
+    response_model=PhotoDetailResponse,
+    summary="Get photo details",
+    description="Returns photo metadata, tags, comments, rating summary, and transformations.",
+    responses={404: {"description": "Photo not found"}},
+)
 async def get_photo(
     photo_id: int,
     db: AsyncSession = Depends(get_db),

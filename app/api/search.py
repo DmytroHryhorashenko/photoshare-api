@@ -15,7 +15,20 @@ ALLOWED_SORT_BY = {"date", "rating"}
 ALLOWED_ORDER = {"asc", "desc"}
 
 
-@router.get("/search", response_model=list[PhotoResponse])
+@router.get(
+    "/search",
+    response_model=list[PhotoResponse],
+    summary="Search and filter photos",
+    description=(
+        "Filter by keyword, tag, or minimum rating. Sort by date or rating. "
+        "The user_id filter requires moderator or admin role."
+    ),
+    responses={
+        200: {"description": "Matching photos"},
+        400: {"description": "Invalid sort_by, order, or tag"},
+        403: {"description": "user_id filter used without sufficient permissions"},
+    },
+)
 async def search_photos(
     keyword: str | None = None,
     tag: str | None = None,

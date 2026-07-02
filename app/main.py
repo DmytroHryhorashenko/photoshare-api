@@ -36,6 +36,10 @@ OPENAPI_TAGS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.is_development and settings.secret_key == "change-me":
+        raise RuntimeError(
+            "SECRET_KEY must be set to a strong random value in production"
+        )
     yield
 
 
@@ -84,9 +88,16 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+DEV_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.is_development else [],
+    allow_origins=DEV_CORS_ORIGINS if settings.is_development else [],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

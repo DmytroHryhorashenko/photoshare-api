@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -13,7 +13,7 @@ from app.repository.users import (
     get_user_by_email,
     get_user_by_username,
 )
-from app.schemas.auth import UserLogin, UserRegister
+from app.schemas.auth import UserRegister
 
 
 async def is_token_blacklisted(db: AsyncSession, token: str) -> bool:

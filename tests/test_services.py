@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException, UploadFile

@@ -1,5 +1,4 @@
 from collections.abc import AsyncGenerator, Callable
-from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -48,7 +47,12 @@ async def get_current_user(
     if user_id is None:
         raise credentials_exception
 
-    user = await get_user_by_id(db, int(user_id))
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        raise credentials_exception
+
+    user = await get_user_by_id(db, user_id_int)
     if user is None:
         raise credentials_exception
 
@@ -86,7 +90,12 @@ async def get_optional_current_user(
     if user_id is None:
         return None
 
-    user = await get_user_by_id(db, int(user_id))
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+    user = await get_user_by_id(db, user_id_int)
     if user is None or not user.is_active:
         return None
 

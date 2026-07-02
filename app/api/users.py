@@ -26,14 +26,22 @@ from app.schemas.user import (
 router = APIRouter()
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserResponse, summary="Get current user profile")
 async def get_me(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
     return current_user
 
 
-@router.put("/me", response_model=UserResponse)
+@router.put(
+    "/me",
+    response_model=UserResponse,
+    summary="Update current user profile",
+    responses={
+        200: {"description": "Profile updated"},
+        400: {"description": "Duplicate email/username or empty update"},
+    },
+)
 async def update_me(
     update_data: UserUpdate,
     db: AsyncSession = Depends(get_db),
@@ -71,7 +79,12 @@ async def update_me(
     return user
 
 
-@router.get("/{username}", response_model=UserPublicProfile)
+@router.get(
+    "/{username}",
+    response_model=UserPublicProfile,
+    summary="Get public user profile",
+    responses={404: {"description": "User not found"}},
+)
 async def get_user_profile(
     username: str,
     db: AsyncSession = Depends(get_db),

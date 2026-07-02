@@ -1,7 +1,6 @@
 """Cloudinary media upload, deletion, and transformation URL building."""
 
 import asyncio
-import io
 
 import cloudinary
 import cloudinary.uploader
