@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.permissions import can_modify_photo
 from app.models.user import User, UserRole
@@ -37,6 +38,16 @@ def test_build_transformation_options():
 def test_build_transformation_type():
     transformation = TransformRequest(width=500, crop=CropMode.THUMB, effect="sepia")
     assert build_transformation_type(transformation) == "w500_c_thumb_e_sepia"
+
+
+def test_transform_request_rejects_invalid_effect():
+    with pytest.raises(ValidationError):
+        TransformRequest(effect="not-real")
+
+
+def test_transform_request_normalizes_effect():
+    request = TransformRequest(effect="  GRAYSCALE ")
+    assert request.effect == "grayscale"
 
 
 def test_validate_transformation_request_requires_option():
@@ -106,41 +117,6 @@ def test_non_owner_cannot_transform_photo():
     assert can_modify_photo(photo_user_id=1, current_user=other_user) is False
 
 
-@pytest.fixture
-async def client(db_session):
-    from httpx import ASGITransport, AsyncClient
-
-    from app.dependencies import get_db
-    from app.main import app
-
-    async def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-async def db_session():
-    from sqlalchemy import text
-
-    from app.database import async_session_maker
-
-    try:
-        async with async_session_maker() as session:
-            await session.execute(text("SELECT 1"))
-            yield session
-            await session.rollback()
-    except Exception:
-        pytest.skip("Database not available for integration tests")
-
-
 @pytest.mark.asyncio
 @patch("app.api.transforms.generate_qr_code", new_callable=AsyncMock)
 @patch("app.api.transforms.build_transformed_url")
@@ -196,3 +172,206 @@ async def test_reject_non_owner_transform(
     assert response.status_code == 403
     mock_build_url.assert_not_called()
     mock_generate_qr.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("app.api.transforms.generate_qr_code", new_callable=AsyncMock)
+@patch("app.api.transforms.build_transformed_url")
+async def test_create_transform_success(
+    mock_build_url,
+    mock_generate_qr,
+    client,
+    db_session,
+):
+    mock_build_url.return_value = "https://cdn.example.com/transformed.jpg"
+    mock_generate_qr.return_value = "https://cdn.example.com/qr.png"
+
+    owner = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "transform_success",
+            "email": "transform_success@example.com",
+            "password": "securepassword123",
+        },
+    )
+    token = (
+        await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "transform_success@example.com",
+                "password": "securepassword123",
+            },
+        )
+    ).json()["access_token"]
+
+    from app.models.photo import Photo
+
+    photo = Photo(
+        user_id=owner.json()["id"],
+        description="Transform me",
+        image_url="https://example.com/photo.jpg",
+        public_id="transform-success-photo",
+    )
+    db_session.add(photo)
+    await db_session.flush()
+    await db_session.refresh(photo)
+
+    response = await client.post(
+        f"/api/v1/photos/{photo.id}/transform",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"width": 400, "effect": "grayscale"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["transformed_url"] == "https://cdn.example.com/transformed.jpg"
+    assert data["qr_code_url"] == "https://cdn.example.com/qr.png"
+
+
+@pytest.mark.asyncio
+async def test_transform_missing_photo(client):
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "transform_missing",
+            "email": "transform_missing@example.com",
+            "password": "securepassword123",
+        },
+    )
+    token = (
+        await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "transform_missing@example.com",
+                "password": "securepassword123",
+            },
+        )
+    ).json()["access_token"]
+
+    response = await client.post(
+        "/api/v1/photos/99999/transform",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"width": 300},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_transform_invalid_request(client, db_session):
+    owner = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "transform_invalid",
+            "email": "transform_invalid@example.com",
+            "password": "securepassword123",
+        },
+    )
+    token = (
+        await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "transform_invalid@example.com",
+                "password": "securepassword123",
+            },
+        )
+    ).json()["access_token"]
+
+    from app.models.photo import Photo
+
+    photo = Photo(
+        user_id=owner.json()["id"],
+        description="Invalid transform",
+        image_url="https://example.com/photo.jpg",
+        public_id="transform-invalid-photo",
+    )
+    db_session.add(photo)
+    await db_session.flush()
+    await db_session.refresh(photo)
+
+    response = await client.post(
+        f"/api/v1/photos/{photo.id}/transform",
+        headers={"Authorization": f"Bearer {token}"},
+        json={},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_transforms_missing_photo(client):
+    response = await client.get("/api/v1/photos/99999/transforms")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_transform_missing(client):
+    response = await client.get("/api/v1/transforms/99999")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@patch("app.api.transforms.generate_qr_code", new_callable=AsyncMock)
+@patch("app.api.transforms.build_transformed_url")
+async def test_admin_can_transform_another_users_photo(
+    mock_build_url,
+    mock_generate_qr,
+    client,
+    db_session,
+):
+    mock_build_url.return_value = "https://cdn.example.com/admin-transformed.jpg"
+    mock_generate_qr.return_value = "https://cdn.example.com/admin-qr.png"
+
+    owner = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "transform_owner_admin",
+            "email": "transform_owner_admin@example.com",
+            "password": "securepassword123",
+        },
+    )
+    admin = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "transform_admin_user",
+            "email": "transform_admin_user@example.com",
+            "password": "securepassword123",
+        },
+    )
+    from app.repository.users import set_user_role
+
+    await set_user_role(db_session, admin.json()["id"], UserRole.ADMIN)
+    await db_session.commit()
+
+    admin_token = (
+        await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "transform_admin_user@example.com",
+                "password": "securepassword123",
+            },
+        )
+    ).json()["access_token"]
+
+    from app.models.photo import Photo
+
+    photo = Photo(
+        user_id=owner.json()["id"],
+        description="Admin transform",
+        image_url="https://example.com/photo.jpg",
+        public_id="admin-transform-photo",
+    )
+    db_session.add(photo)
+    await db_session.flush()
+    await db_session.refresh(photo)
+
+    response = await client.post(
+        f"/api/v1/photos/{photo.id}/transform",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"width": 500},
+    )
+    assert response.status_code == 201
+
+    list_response = await client.get(f"/api/v1/photos/{photo.id}/transforms")
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+
+    get_response = await client.get(f"/api/v1/transforms/{list_response.json()[0]['id']}")
+    assert get_response.status_code == 200

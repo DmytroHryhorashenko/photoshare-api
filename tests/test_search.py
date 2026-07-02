@@ -15,41 +15,6 @@ def test_normalize_tag_name_for_search():
     assert normalize_tag_name("  Nature ") == "nature"
 
 
-@pytest.fixture
-async def client(db_session):
-    from httpx import ASGITransport, AsyncClient
-
-    from app.dependencies import get_db
-    from app.main import app
-
-    async def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-async def db_session():
-    from sqlalchemy import text
-
-    from app.database import async_session_maker
-
-    try:
-        async with async_session_maker() as session:
-            await session.execute(text("SELECT 1"))
-            yield session
-            await session.rollback()
-    except Exception:
-        pytest.skip("Database not available for integration tests")
-
-
 async def _seed_search_data(db_session):
     owner = User(
         username="search_owner",
@@ -220,3 +185,69 @@ async def test_allow_user_id_filter_for_moderator(client, db_session):
     assert response.status_code == 200
     assert len(response.json()) == 2
     assert all(item["user_id"] == data["owner"].id for item in response.json())
+
+
+@pytest.mark.asyncio
+async def test_search_invalid_sort_by(client):
+    response = await client.get("/api/v1/photos/search", params={"sort_by": "invalid"})
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_search_invalid_order(client):
+    response = await client.get("/api/v1/photos/search", params={"order": "sideways"})
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_search_invalid_min_rating(client):
+    response = await client.get("/api/v1/photos/search", params={"min_rating": 0})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_search_invalid_tag(client):
+    response = await client.get("/api/v1/photos/search", params={"tag": "   "})
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_search_api_returns_results(client, db_session):
+    from tests.test_search import _seed_search_data
+
+    await _seed_search_data(db_session)
+    await db_session.commit()
+
+    response = await client.get("/api/v1/photos/search", params={"keyword": "mountain"})
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_allow_user_id_filter_for_admin(client, db_session):
+    data = await _seed_search_data(db_session)
+    register_response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "search_admin",
+            "email": "search_admin@example.com",
+            "password": "securepassword123",
+        },
+    )
+    admin_id = register_response.json()["id"]
+    await set_user_role(db_session, admin_id, UserRole.ADMIN)
+
+    token = (
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "search_admin@example.com", "password": "securepassword123"},
+        )
+    ).json()["access_token"]
+
+    response = await client.get(
+        "/api/v1/photos/search",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"user_id": data["owner"].id},
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 2

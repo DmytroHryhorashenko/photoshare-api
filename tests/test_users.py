@@ -2,63 +2,15 @@ import pytest
 
 from app.models.photo import Photo
 from app.models.user import UserRole
-
-
-@pytest.fixture
-async def client(db_session):
-    from httpx import ASGITransport, AsyncClient
-
-    from app.dependencies import get_db
-    from app.main import app
-
-    async def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-async def db_session():
-    from sqlalchemy import text
-
-    from app.database import async_session_maker
-
-    try:
-        async with async_session_maker() as session:
-            await session.execute(text("SELECT 1"))
-            yield session
-            await session.rollback()
-    except Exception:
-        pytest.skip("Database not available for integration tests")
+from tests.helpers import auth_header, login_user, register_user
 
 
 async def _register(client, username: str, email: str) -> dict:
-    response = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": username,
-            "email": email,
-            "password": "securepassword123",
-        },
-    )
-    assert response.status_code == 201
-    return response.json()
+    return await register_user(client, username, email)
 
 
 async def _login(client, email: str) -> str:
-    response = await client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": "securepassword123"},
-    )
-    assert response.status_code == 200
-    return response.json()["access_token"]
+    return await login_user(client, email)
 
 
 @pytest.mark.asyncio
@@ -274,3 +226,93 @@ async def test_inactive_user_cannot_access_protected_route(client):
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "Inactive user account"
+
+
+@pytest.mark.asyncio
+async def test_update_profile_password(client):
+    await _register(client, "pwd_update", "pwd_update@example.com")
+    token = await _login(client, "pwd_update@example.com")
+
+    response = await client.put(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"password": "newsecurepassword99"},
+    )
+    assert response.status_code == 200
+
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "pwd_update@example.com", "password": "newsecurepassword99"},
+    )
+    assert login_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_missing_username_returns_404(client):
+    response = await client.get("/api/v1/users/no_such_user")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_me_requires_fields(client):
+    await _register(client, "empty_update", "empty_update@example.com")
+    token = await _login(client, "empty_update@example.com")
+
+    response = await client.put(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No fields to update"
+
+
+@pytest.mark.asyncio
+async def test_ban_missing_user_returns_404(client):
+    await _register(client, "ban_missing_admin", "ban_missing_admin@example.com")
+    token = await _login(client, "ban_missing_admin@example.com")
+
+    response = await client.patch(
+        "/api/v1/users/99999/ban",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_unban_missing_user_returns_404(client):
+    await _register(client, "unban_missing_admin", "unban_missing_admin@example.com")
+    token = await _login(client, "unban_missing_admin@example.com")
+
+    response = await client.patch(
+        "/api/v1/users/99999/unban",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_change_role_missing_user_returns_404(client):
+    await _register(client, "role_missing_admin", "role_missing_admin@example.com")
+    token = await _login(client, "role_missing_admin@example.com")
+
+    response = await client.patch(
+        "/api/v1/users/99999/role",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role": UserRole.MODERATOR.value},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_profile_same_email_skips_duplicate_check(client):
+    await register_user(client, "same_email", "same_email@example.com")
+    token = await login_user(client, "same_email@example.com")
+
+    response = await client.put(
+        "/api/v1/users/me",
+        headers=auth_header(token),
+        json={"email": "same_email@example.com", "username": "same_email_renamed"},
+    )
+    assert response.status_code == 200
+    assert response.json()["username"] == "same_email_renamed"

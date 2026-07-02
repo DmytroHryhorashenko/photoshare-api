@@ -2,8 +2,8 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_root(client):
-    response = await client.get("/")
+async def test_root(http_client):
+    response = await http_client.get("/")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
@@ -11,7 +11,7 @@ async def test_root(client):
 
 
 @pytest.mark.asyncio
-async def test_health(client):
-    response = await client.get("/health")
+async def test_health(http_client):
+    response = await http_client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "healthy"}

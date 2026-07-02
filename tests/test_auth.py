@@ -1,7 +1,6 @@
 from datetime import timedelta
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from app.core.security import (
     create_access_token,
@@ -9,9 +8,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.dependencies import get_db
-from app.main import app
-
+from tests.helpers import auth_header, login_user, register_user
 
 def test_hash_and_verify_password():
     hashed = hash_password("securepassword123")
@@ -34,36 +31,6 @@ def test_create_and_decode_access_token():
 def test_decode_invalid_token_raises():
     with pytest.raises(ValueError, match="Invalid or expired token"):
         decode_access_token("not-a-valid-token")
-
-
-@pytest.fixture
-async def client(db_session):
-    async def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-async def db_session():
-    from sqlalchemy import text
-
-    from app.database import async_session_maker
-
-    try:
-        async with async_session_maker() as session:
-            await session.execute(text("SELECT 1"))
-            yield session
-            await session.rollback()
-    except Exception:
-        pytest.skip("Database not available for integration tests")
 
 
 @pytest.mark.asyncio
@@ -122,6 +89,30 @@ async def test_register_duplicate_email_returns_400(client):
 
 
 @pytest.mark.asyncio
+async def test_register_duplicate_username_returns_400(client):
+    first = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "same_username",
+            "email": "first_username@example.com",
+            "password": "securepassword123",
+        },
+    )
+    assert first.status_code == 201
+
+    duplicate = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "same_username",
+            "email": "second_username@example.com",
+            "password": "securepassword123",
+        },
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Username already taken"
+
+
+@pytest.mark.asyncio
 async def test_login_invalid_credentials_returns_401(client):
     response = await client.post(
         "/api/v1/auth/login",
@@ -132,3 +123,11 @@ async def test_login_invalid_credentials_returns_401(client):
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid email or password"
+
+
+@pytest.mark.asyncio
+async def test_logout_endpoint(client):
+    await register_user(client, "auth_logout", "auth_logout@example.com")
+    token = await login_user(client, "auth_logout@example.com")
+    response = await client.post("/api/v1/auth/logout", headers=auth_header(token))
+    assert response.status_code == 204

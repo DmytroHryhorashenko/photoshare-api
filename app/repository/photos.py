@@ -99,6 +99,8 @@ async def attach_tags_to_photo(
     photo: Photo,
     tags: list[Tag],
 ) -> Photo:
+    # Eager-load tags before assignment to avoid async lazy-load (MissingGreenlet).
+    await db.refresh(photo, attribute_names=["tags"])
     photo.tags = tags
     await db.flush()
     await db.refresh(photo, attribute_names=["tags"])

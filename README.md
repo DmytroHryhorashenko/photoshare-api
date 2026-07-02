@@ -28,6 +28,7 @@ Production-ready REST API for sharing and managing photos. Users can upload imag
 | Auth | JWT (python-jose) + bcrypt (passlib) |
 | Media | Cloudinary + QR codes (qrcode, Pillow) |
 | Containerization | Docker & Docker Compose |
+| Frontend (optional) | React, Vite, TypeScript, Tailwind CSS |
 | Testing | Pytest + pytest-cov |
 
 ## Quick Start (Docker)
@@ -45,6 +46,7 @@ docker compose up -d --build
 | API | http://localhost:8000 |
 | **Swagger UI** | http://localhost:8000/docs |
 | ReDoc | http://localhost:8000/redoc |
+| Frontend (optional) | http://localhost:5173 |
 | PostgreSQL | localhost:5432 |
 
 Migrations run automatically on container startup via `scripts/docker-entrypoint.sh`.
@@ -54,6 +56,55 @@ Stop the stack:
 ```bash
 docker compose down
 ```
+
+> **Note:** The project is a REST API project. The frontend is included only as an optional visual demo and does not replace Swagger/API verification.
+
+## Verification
+
+### Section 1: Mentor API Verification
+
+The API is the primary deliverable. Verify it directly — no frontend required.
+
+| Check | URL / Command |
+|-------|---------------|
+| Swagger UI | http://localhost:8000/docs |
+| ReDoc | http://localhost:8000/redoc |
+| Health | http://localhost:8000/health |
+| Root | http://localhost:8000/ |
+
+Run tests inside Docker:
+
+```bash
+docker compose exec api pytest -v
+docker compose exec api pytest --cov=app --cov-report=term-missing -v
+```
+
+### Section 2: Optional Frontend Demo
+
+The React frontend is a visual companion only. Mentors can still verify all requirements through Swagger.
+
+| Check | URL |
+|-------|-----|
+| Landing page | http://localhost:5173 |
+| Gallery | http://localhost:5173/gallery |
+| API Docs link | Opens http://localhost:8000/docs |
+
+Start the full stack (API + DB + frontend):
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Run the frontend locally without Docker:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Set `VITE_API_URL=http://localhost:8000/api/v1` in `frontend/.env` if needed.
 
 ## Installation (Local)
 
@@ -241,6 +292,7 @@ photoshare-api/
 │   └── utils/
 ├── alembic/
 ├── tests/
+├── frontend/          # Optional React demo (Vite + TypeScript)
 ├── scripts/           # Docker entrypoint
 ├── Dockerfile
 ├── docker-compose.yml
@@ -307,6 +359,7 @@ fly ssh console -C "alembic upgrade head"
 | PostgreSQL | ✅ |
 | Alembic migrations | ✅ |
 | Swagger / OpenAPI docs | ✅ |
+| Optional frontend demo | ✅ |
 
 ## License
 

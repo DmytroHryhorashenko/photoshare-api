@@ -47,41 +47,6 @@ def test_can_delete_comment_moderator_or_admin_only():
     assert can_delete_comment(admin) is True
 
 
-@pytest.fixture
-async def client(db_session):
-    from httpx import ASGITransport, AsyncClient
-
-    from app.dependencies import get_db
-    from app.main import app
-
-    async def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-async def db_session():
-    from sqlalchemy import text
-
-    from app.database import async_session_maker
-
-    try:
-        async with async_session_maker() as session:
-            await session.execute(text("SELECT 1"))
-            yield session
-            await session.rollback()
-    except Exception:
-        pytest.skip("Database not available for integration tests")
-
-
 async def _register_user(client, username: str, email: str) -> dict:
     response = await client.post(
         "/api/v1/auth/register",
@@ -232,3 +197,68 @@ async def test_reject_normal_user_delete_comment(client, db_session):
         headers={"Authorization": f"Bearer {other_token}"},
     )
     assert delete_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_photo_comments(client, db_session):
+    user = await _register_user(client, "list_comments", "list_comments@example.com")
+    token = await _login(client, "list_comments@example.com")
+    photo_id = await _create_photo(db_session, user["id"])
+
+    await client.post(
+        f"/api/v1/photos/{photo_id}/comments",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "First"},
+    )
+    response = await client.get(f"/api/v1/photos/{photo_id}/comments")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_comment_missing_photo(client):
+    await _register_user(client, "comment_missing", "comment_missing@example.com")
+    token = await _login(client, "comment_missing@example.com")
+
+    response = await client.post(
+        "/api/v1/photos/99999/comments",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "Hello"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_comments_missing_photo(client):
+    response = await client.get("/api/v1/photos/99999/comments")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_edit_missing_comment(client):
+    await _register_user(client, "edit_missing", "edit_missing@example.com")
+    token = await _login(client, "edit_missing@example.com")
+
+    response = await client.put(
+        "/api/v1/comments/99999",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"text": "Updated"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_missing_comment(client, db_session):
+    await _register_user(client, "del_missing_mod", "del_missing_mod@example.com")
+    from app.repository.users import set_user_role
+
+    mod = await _register_user(client, "del_missing_mod2", "del_missing_mod2@example.com")
+    await set_user_role(db_session, mod["id"], UserRole.MODERATOR)
+    await db_session.commit()
+    token = await _login(client, "del_missing_mod2@example.com")
+
+    response = await client.delete(
+        "/api/v1/comments/99999",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
