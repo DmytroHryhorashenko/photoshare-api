@@ -61,8 +61,8 @@ export default function MetricsSection() {
 
             <div className="mt-8 grid gap-4 border-t border-white/10 pt-8 sm:grid-cols-3">
               {[
-                { label: 'Test suite', value: '184 passed' },
-                { label: 'Code coverage', value: '94%' },
+                { label: 'Test suite', value: '187 passed' },
+                { label: 'Code coverage', value: '93.5%' },
                 { label: 'API style', value: 'REST + OpenAPI' },
               ].map((item) => (
                 <div key={item.label} className="text-center sm:text-left">

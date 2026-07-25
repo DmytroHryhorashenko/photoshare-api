@@ -128,6 +128,60 @@ async def test_sort_by_rating_desc(db_session):
 
 
 @pytest.mark.asyncio
+async def test_filter_by_date_range(db_session):
+    data = await _seed_search_data(db_session)
+    photo_one, photo_two, photo_three = data["photos"]
+
+    results = await search_photos(
+        db_session,
+        date_from=photo_two.created_at,
+        date_to=photo_three.created_at,
+    )
+    assert {photo.public_id for photo in results} == {"search-photo-2", "search-photo-3"}
+
+    only_oldest = await search_photos(
+        db_session,
+        date_from=photo_one.created_at,
+        date_to=photo_one.created_at,
+    )
+    assert [photo.public_id for photo in only_oldest] == ["search-photo-1"]
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_invalid_date_range(client):
+    response = await client.get(
+        "/api/v1/photos/search",
+        params={
+            "date_from": "2026-07-10T00:00:00Z",
+            "date_to": "2026-07-01T00:00:00Z",
+        },
+    )
+    assert response.status_code == 400
+    assert "date_from" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_search_api_date_range_filter(client, db_session):
+    data = await _seed_search_data(db_session)
+    await db_session.commit()
+    photo_two = data["photos"][1]
+    photo_three = data["photos"][2]
+
+    response = await client.get(
+        "/api/v1/photos/search",
+        params={
+            "date_from": photo_two.created_at.isoformat(),
+            "date_to": photo_three.created_at.isoformat(),
+        },
+    )
+    assert response.status_code == 200
+    assert {item["public_id"] for item in response.json()} == {
+        "search-photo-2",
+        "search-photo-3",
+    }
+
+
+@pytest.mark.asyncio
 async def test_reject_user_id_filter_for_normal_user(client, db_session):
     data = await _seed_search_data(db_session)
     register_response = await client.post(

@@ -3,8 +3,8 @@ export const API_REDOC_URL = 'http://localhost:8000/redoc'
 export const GITHUB_URL = 'https://github.com/DmytroHryhorashenko/photoshare-api'
 
 export const STATS = [
-  { value: 184, suffix: '+', label: 'Tests Passed' },
-  { value: 94, suffix: '%', label: 'Coverage' },
+  { value: 187, suffix: '+', label: 'Tests Passed' },
+  { value: 93, suffix: '%', label: 'Coverage' },
   { value: 0, label: 'JWT Authentication', display: 'JWT' },
   { value: 0, label: 'Cloudinary Integration', display: 'Cloudinary' },
   { value: 0, label: 'Docker Ready', display: 'Docker' },
@@ -104,8 +104,8 @@ export const API_ENDPOINTS = [
 ] as const
 
 export const METRICS = [
-  { label: '184 Tests', icon: 'tests' },
-  { label: '94% Coverage', icon: 'coverage' },
+  { label: '187 Tests', icon: 'tests' },
+  { label: '93.5% Coverage', icon: 'coverage' },
   { label: 'REST API', icon: 'api' },
   { label: 'Swagger', icon: 'swagger' },
   { label: 'Docker', icon: 'docker' },

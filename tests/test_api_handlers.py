@@ -249,6 +249,8 @@ async def test_search_handler(db_session):
         sort_by="date",
         order="desc",
         user_id=None,
+        date_from=None,
+        date_to=None,
         db=db_session,
         current_user=None,
     )

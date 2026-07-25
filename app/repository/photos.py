@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -158,6 +160,8 @@ async def search_photos(
     sort_by: str = "date",
     order: str = "desc",
     user_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> list[Photo]:
     rating_stats = (
         select(
@@ -175,6 +179,12 @@ async def search_photos(
 
     if user_id is not None:
         stmt = stmt.where(Photo.user_id == user_id)
+
+    if date_from is not None:
+        stmt = stmt.where(Photo.created_at >= date_from)
+
+    if date_to is not None:
+        stmt = stmt.where(Photo.created_at <= date_to)
 
     if tag:
         stmt = stmt.join(Photo.tags).where(Tag.name == tag)
